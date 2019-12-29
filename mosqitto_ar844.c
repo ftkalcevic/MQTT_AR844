@@ -1,4 +1,20 @@
-
+// MQTT publisher of AR844 smart sensor sound level meter
+// Uses mosquitto mqtt library, and libusb1.0
+//
+// Configuration values are in the code.
+//
+// published format tele/*hostname*/ar844/data
+//   { "time": "2019-12-29T13:45:00Z",
+//     "min": 13.2,
+//     "max": 72.4,
+//     "avg": 50.0,
+//     "weight": "A"
+//   }
+//
+// Based on...
+//  libusb test code - https://www.microchip.com/forums/m340898.aspx
+//  meter reverse engineering - http://www.brainworks.it/rpi-environmental-monitoring/reveng-the-usb-data
+//
 #include <errno.h> 
 #include <string.h> 
 #include <stdio.h> 
@@ -9,29 +25,20 @@
 #include <libusb-1.0/libusb.h> 
 #include <mosquitto.h>
 
-#define VERSION "0.1.0"  
+// Config
+const int   meter_poll_period = 500;                // ms - poll meter every 500ms
+const int   meter_accumulation_period = 1*60;       // s  - accumulate readings and publish every 60 seconds
+const char *mqqt_broker_hostname = "server";        // broker host name
+const int   mqqt_broker_port = 1883;                // broker port
+const char *mqqt_topic = "tele/%s/ar844/data";      // publish topic - %s will contain hostname
+#define     MQQT_KEEPALIVE  90                      // connection keep alive time (seconds)
+
+// AR844 VID and PID (dodgey?)
 #define VENDOR_ID 0x1234
 #define PRODUCT_ID 0x5678
- 
-// HID Class-Specific Requests values. See section 7.2 of the HID specifications 
-#define HID_GET_REPORT                0x01 
-#define HID_GET_IDLE                  0x02 
-#define HID_GET_PROTOCOL              0x03 
-#define HID_SET_REPORT                0x09 
-#define HID_SET_IDLE                  0x0A 
-#define HID_SET_PROTOCOL              0x0B 
-#define HID_REPORT_TYPE_INPUT         0x01 
-#define HID_REPORT_TYPE_OUTPUT        0x02 
-#define HID_REPORT_TYPE_FEATURE       0x03 
-   
-#define CTRL_IN        LIBUSB_ENDPOINT_IN|LIBUSB_REQUEST_TYPE_CLASS|LIBUSB_RECIPIENT_INTERFACE 
-#define CTRL_OUT    LIBUSB_ENDPOINT_OUT|LIBUSB_REQUEST_TYPE_CLASS|LIBUSB_RECIPIENT_INTERFACE 
- 
- 
-const static int PACKET_CTRL_LEN=8;   
+// endpoint information (we could query this)
 #define PACKET_INT_OUT_LEN     8 
 #define PACKET_INT_IN_LEN     8
-const static int INTERFACE=0; 
 const static int ENDPOINT_INT_IN=0x81; /* endpoint 0x81 address for IN */ 
 const static int ENDPOINT_INT_OUT=0x02; /* endpoint 1 address for OUT */ 
 const static int TIMEOUT=1000; /* timeout in ms */  
@@ -42,22 +49,6 @@ static struct mosquitto *mqqt_client = NULL;
 
 volatile int doExit = 0;
 static char hostname[256];
-
-// Config
-int meter_poll_period = 500;                // ms
-int meter_accumulation_period = 1*60;       // s
-char *mqqt_broker_hostname = "server";
-int mqqt_broker_port = 1883;
-// ar844/hostname/start
-// ar844/hostname/data
-//   { "time": "10:25:00 39DEC2019",
-//     "min": 13.2,
-//     "max": 72.4,
-//     "avg": 50.0,
-//     "weight": "A"
-//   }
-char *mqqt_topic = "tele/%s/ar844/data";
-#define MQQT_KEEPALIVE  60
 
 void signal_handler(int n)
 {
@@ -170,8 +161,9 @@ static int main_loop(void)
     int r,i; 
     int transferred; 
     uint8_t answer[PACKET_INT_IN_LEN] = {0}; 
-    uint8_t question[PACKET_INT_OUT_LEN] = {0xB3,0x50,0x05,0x16,0x24,0x11,0x19,0x00};
+    uint8_t question[PACKET_INT_OUT_LEN] = {0xB3,0x50,0x05,0x16,0x24,0x11,0x19,0x00};   // I don't think the content of the poll packet matters.
 
+    // set up a send and receive async transfer to run simultaneously.
     struct libusb_transfer *send = libusb_alloc_transfer(0);
     struct libusb_transfer *recv = libusb_alloc_transfer(0);
 
