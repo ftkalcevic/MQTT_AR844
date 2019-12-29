@@ -3,7 +3,7 @@
 This is linux code to read the AR844 Smart Sensor sound level meter.
 
 It polls the usb device (yes polls) every 500ms.  It accumulates the results for one minute then publishes the avg/min/max
-to the MQTT subject tele/HOSTNAME/ar844/data.
+to the MQTT topic tele/HOSTNAME/ar844/data.
 
 It uses mosquitto, and libusb-1.0 libraries.
 
