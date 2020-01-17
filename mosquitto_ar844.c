@@ -32,6 +32,18 @@ const char *mqqt_broker_hostname = "server";        // broker host name
 const int   mqqt_broker_port = 1883;                // broker port
 const char *mqqt_topic = "tele/%s/ar844/data";      // publish topic - %s will contain hostname
 #define     MQQT_KEEPALIVE  90                      // connection keep alive time (seconds)
+#define WEIGHT_C	(1<<4)
+#define WEIGHT_A	(0)
+uint8_t ConfigWeight = WEIGHT_C;
+#define SPEED_FAST	(1<<6)
+#define SPEED_SLOW	(0)
+uint8_t ConfigSpeed = SPEED_FAST;
+#define RANGE_30_130	(0)
+#define RANGE_30_80	(1)
+#define RANGE_50_100	(2)
+#define RANGE_60_110	(3)
+#define RANGE_80_130	(4)
+uint8_t ConfigRange = RANGE_30_130;
 
 // AR844 VID and PID (dodgey?)
 #define VENDOR_ID 0x1234
@@ -161,13 +173,14 @@ static int main_loop(void)
     int r,i; 
     int transferred; 
     uint8_t answer[PACKET_INT_IN_LEN] = {0}; 
-    uint8_t question[PACKET_INT_OUT_LEN] = {0xB3,0x50,0x05,0x16,0x24,0x11,0x19,0x00};   // I don't think the content of the poll packet matters.
+    uint8_t question[PACKET_INT_OUT_LEN] = {0xB3,0x00,0x00,0x00,0x00,0x00,0x00,0x00};   // I don't think the content of the poll packet matters.
+    uint8_t program_meter[PACKET_INT_OUT_LEN] = {0x56,ConfigWeight | ConfigSpeed | ConfigRange,0x00,0x00,0x00,0x00,0x00,0x00};   // I don't think the content of the poll packet matters.
 
     // set up a send and receive async transfer to run simultaneously.
     struct libusb_transfer *send = libusb_alloc_transfer(0);
     struct libusb_transfer *recv = libusb_alloc_transfer(0);
 
-    libusb_fill_interrupt_transfer( send, devh, ENDPOINT_INT_OUT, question, PACKET_INT_OUT_LEN, NULL, NULL, 1000);
+    libusb_fill_interrupt_transfer( send, devh, ENDPOINT_INT_OUT, program_meter, PACKET_INT_OUT_LEN, NULL, NULL, 1000);
     libusb_fill_interrupt_transfer( recv, devh, ENDPOINT_INT_IN, answer, PACKET_INT_IN_LEN, NULL, NULL, 1000);
     recv->flags = LIBUSB_TRANSFER_SHORT_NOT_OK;
 
@@ -216,7 +229,8 @@ static int main_loop(void)
                 //     printf("\n"); 
                 //}
 
-                if ( recv->actual_length == PACKET_INT_IN_LEN ) 
+                if ( recv->actual_length == PACKET_INT_IN_LEN && 
+		     answer[0] < 10 ) // 200dB is x07D0 - if [0] is greater ignore (ack for config?)
                 {
                      uint16_t dB = (((uint16_t)answer[0]) << 8) | answer[1];
                      float soundLeveldB = (float)dB/10.0;
@@ -225,7 +239,7 @@ static int main_loop(void)
                      int measureRange = answer[2] & 0x07;
                     
                      //printf("%f %s %s %d\n", soundLeveldB, measureSpeed==1?"FAST":"SLOW",measureCurveType==0?"A":"C",measureRange);
-                     process_sample( dB, measureSpeed, measureCurveType==0?'A':'Z', measureRange );
+                     process_sample( dB, measureSpeed, measureCurveType==0?'A':'C', measureRange );
                 }
             }
             else
@@ -248,6 +262,7 @@ static int main_loop(void)
 			{
                 last = now;
                 send->status = -1;
+		send->buffer = question;
                 r = libusb_submit_transfer( send );
                 //fprintf(stderr, "send status=%d\n", send->status );
 			}
@@ -314,6 +329,7 @@ out:
 int main(void) 
 { 
     int r = 1; 
+    fprintf(stderr, "mosquitto_ar844 starting\n"); 
 
     signal(SIGINT, signal_handler);
 
