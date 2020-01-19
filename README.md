@@ -9,3 +9,5 @@ It uses mosquitto, and libusb-1.0 libraries.
 
 I use this with a Pi Zero W to remotely monitor noise.
 
+There is no configuration, that's all in the code at the moment.
+The sound meter can be configured at startup - eg Weight A/C, speed slow/fast, etc.
