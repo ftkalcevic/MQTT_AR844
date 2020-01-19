@@ -28,9 +28,9 @@
 // Config
 const int   meter_poll_period = 500;                // ms - poll meter every 500ms
 const int   meter_accumulation_period = 1*60;       // s  - accumulate readings and publish every 60 seconds
-const char *mqqt_broker_hostname = "server";        // broker host name
-const int   mqqt_broker_port = 1883;                // broker port
-const char *mqqt_topic = "tele/%s/ar844/data";      // publish topic - %s will contain hostname
+const char *mqtt_broker_hostname = "server";        // broker host name
+const int   mqtt_broker_port = 1883;                // broker port
+const char *mqtt_topic = "tele/%s/ar844/data";      // publish topic - %s will contain hostname
 #define     MQQT_KEEPALIVE  90                      // connection keep alive time (seconds)
 #define WEIGHT_C	(1<<4)
 #define WEIGHT_A	(0)
@@ -57,7 +57,7 @@ const static int TIMEOUT=1000; /* timeout in ms */
 
 static libusb_context *usbCtx;
 static struct libusb_device_handle *devh = NULL;  
-static struct mosquitto *mqqt_client = NULL;
+static struct mosquitto *mqtt_client = NULL;
 
 volatile int doExit = 0;
 static char hostname[256];
@@ -75,23 +75,23 @@ int timespec_subtract (struct timespec *x, struct timespec *y)
     return sec_diff + ns_diff;
 }
 
-static int init_mqqt()
+static int init_mqtt()
 {
     int r;
 
     r = mosquitto_lib_init();
 
-    mqqt_client = mosquitto_new(NULL, true, NULL );
-    if ( mqqt_client == NULL )
+    mqtt_client = mosquitto_new(NULL, true, NULL );
+    if ( mqtt_client == NULL )
     {
         fprintf(stderr, "Failed to create mosquitto client %d", errno );
         return -errno;
     }
 
-    r = mosquitto_connect( mqqt_client, mqqt_broker_hostname, mqqt_broker_port, MQQT_KEEPALIVE );
+    r = mosquitto_connect( mqtt_client, mqtt_broker_hostname, mqtt_broker_port, MQQT_KEEPALIVE );
     if ( r != MOSQ_ERR_SUCCESS )
     {
-        fprintf(stderr, "Failed to connect to host %s:%d %d", mqqt_broker_hostname, mqqt_broker_port, r );
+        fprintf(stderr, "Failed to connect to host %s:%d %d", mqtt_broker_hostname, mqtt_broker_port, r );
         return -r;
     }
 
@@ -103,15 +103,19 @@ static void publish_sample(const char * msg )
     int r;
 
     char topic[200];
-    snprintf( topic, sizeof(topic), mqqt_topic, hostname );
+    snprintf( topic, sizeof(topic), mqtt_topic, hostname );
 
-    for ( int i = 0; i < 2; i++ )
+    r = mosquitto_publish( mqtt_client, NULL, topic, strlen(msg), msg, 0, false );
+    if ( r == MOSQ_ERR_SUCCESS )
+        return;
+    fprintf(stderr,"mosquitto_publish returned %d\n", r );
+    fprintf(stderr,"Errno=%d\n", errno);
+    if ( r != 0 )
     {
-        r = mosquitto_publish( mqqt_client, NULL, topic, strlen(msg), msg, 0, false );
-        if ( r == MOSQ_ERR_SUCCESS )
-            break;
-        if ( r == MOSQ_ERR_NO_CONN )
-            mosquitto_reconnect( mqqt_client );
+        fprintf(stderr, "Attempting reconnect\n");
+        r = mosquitto_reconnect( mqtt_client );
+	fprintf(stderr,"mosquitto_reconnect returned %d\n", r );
+        fprintf(stderr,"Errno=%d\n", errno);
     }
 }
 
@@ -340,7 +344,7 @@ int main(void)
         exit(1); 
     }
     
-    r = init_mqqt();
+    r = init_mqtt();
     if ( r < 0 )
     {
         fprintf(stderr, "Failed to initialise mqtt\n"); 
@@ -357,8 +361,8 @@ out:
     libusb_close(devh); 
     libusb_exit(NULL); 
 
-    mosquitto_disconnect(mqqt_client);
-    mosquitto_destroy(mqqt_client);
+    mosquitto_disconnect(mqtt_client);
+    mosquitto_destroy(mqtt_client);
     mosquitto_lib_cleanup();
     return r >= 0 ? r : -r;  
  } 

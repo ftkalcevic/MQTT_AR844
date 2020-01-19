@@ -1,2 +1,2 @@
-gcc mosquitto_ar844.c -o mosquitto_ar844  -I/usr/local -L/usr/local -lusb-1.0 -lmosquitto
+gcc mosquitto_ar844.c -o ar844  -I/usr/local -L/usr/local -lusb-1.0 -lmosquitto
 
