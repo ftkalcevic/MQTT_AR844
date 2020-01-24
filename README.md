@@ -11,3 +11,5 @@ I use this with a Pi Zero W to remotely monitor noise.
 
 There is no configuration, that's all in the code at the moment.
 The sound meter can be configured at startup - eg Weight A/C, speed slow/fast, etc.
+
+http://www.franksworkshop.com.au/wordpress/2020/01/25/ar844-sound-meter-mqtt-publisher/
